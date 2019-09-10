@@ -48,9 +48,19 @@ def get_all_users():
 
    return jsonify({"users":output})
     
-@app.route('/user/<user_id>',methods=['GET'])
-def get_one_user():
-   return ''
+@app.route('/user/<int:id>',methods=['GET'])
+def get_one_user(id):
+   user=User.query.get(id)
+   output=[]
+   user_data={}
+   user_data['public_id']=user.public_id
+   user_data['name']=user.name
+   user_data['password']=user.password
+   user_data['admin']=user.admin
+   #we then add the dictionaries to our output lists
+   output.append(user_data)
+
+   return jsonify({"user":output})
 
 @app.route('/user', methods=['POST'])
 def create_user():
@@ -65,9 +75,12 @@ def create_user():
 def promote_user():
     return ''
 
-@app.route('/user/<user_id>', methods=['DELETE'])
-def delete_user():
-    return ''
+@app.route('/user/<int:id>', methods=['DELETE'])
+def delete_user(id):
+    user=User.query.get(id)
+    db.session.delete(user)
+    db.session.commit()
+    return jsonify({"message":"User Deleted Successfully"})
 
 if __name__ == "__main__":
     app.run(debug=True)
