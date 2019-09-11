@@ -1,30 +1,10 @@
-from flask import Flask,request,jsonify
+from flask import request,jsonify,make_response
+from todo import app,db
 import uuid
 from werkzeug.security import generate_password_hash,check_password_hash
-from flask_sqlalchemy import SQLAlchemy
-
-#CONFIG
-app=Flask(__name__)
-app.secret_key='3ddab6977d5f660c'
-app.config['SQLALCHEMY_DATABASE_URI']='sqlite:///api.db'
-
-#INIT DB
-db=SQLAlchemy(app)
-
-#DATABASE TABLES
-
-class User(db.Model):
-    id=db.Column(db.Integer(),primary_key=True)
-    public_id=db.Column(db.String(),unique=True)
-    name=db.Column(db.String(80))
-    password=db.Column(db.String(80))
-    admin=db.Column(db.Boolean())
-
-class Todo(db.Model):
-    id=db.Column(db.Integer(),primary_key=True)
-    text=db.Column(db.String(255))
-    complete=db.Column(db.Boolean)
-    user_id=db.Column(db.Integer())
+from todo.models import User,Todo
+import jwt
+from datetime import datetime
 
 #routes
 @app.route('/user',methods=['GET'])
@@ -32,7 +12,9 @@ def get_all_users():
    #this query returns all the users from the database
 
    users=User.query.all()
-
+   
+   if not users:
+       return jsonify({"message":"There are no users!"})
    output=[]
    #since sqlachemy results cannot be returned directly as json, we make our own json objects from the results.
 
@@ -48,9 +30,12 @@ def get_all_users():
 
    return jsonify({"users":output})
     
+#get one specific user
 @app.route('/user/<int:id>',methods=['GET'])
 def get_one_user(id):
    user=User.query.get(id)
+   if not user:
+       return jsonify({"message": "User doesnot exist"})
    output=[]
    user_data={}
    user_data['public_id']=user.public_id
@@ -62,6 +47,7 @@ def get_one_user(id):
 
    return jsonify({"user":output})
 
+#create a user
 @app.route('/user', methods=['POST'])
 def create_user():
     data= request.get_json()
@@ -71,16 +57,45 @@ def create_user():
     db.session.commit()
     return jsonify({"message":"New User Added Successfully"})
 
-@app.route('/user/<user_id>', methods=['PUT'])
-def promote_user():
-    return ''
+#change a user to an admin
+@app.route('/user/<int:id>', methods=['PUT'])
+def promote_user(id):
+    user=User.query.get(id)
+    if not user:
+        return jsonify({"message":"User does not exist"})
+    user.admin=True
+    db.session.commit()
+    return jsonify({"message ":"User has changed to an admin!"})
 
+#delete a specific user
 @app.route('/user/<int:id>', methods=['DELETE'])
 def delete_user(id):
     user=User.query.get(id)
+
+    if not user:
+        return jsonify({"message":"User Does Not Exist"})
     db.session.delete(user)
     db.session.commit()
     return jsonify({"message":"User Deleted Successfully"})
 
-if __name__ == "__main__":
-    app.run(debug=True)
+#create some security in form of JWT authentication
+@app.route('/login')
+def login_user():
+   auth=request.authorization
+    
+   #if no creadentials are supplied to the API, it should throw a login required message 
+   if not auth or not auth.username or auth.password:
+       return make_response('Could not verify',401,{"WWW-Authenticate":"Basic realm = 'Login required'"})
+   
+   user=User.query.filter_by(name=auth.username).first()
+   
+   
+   if not user:
+       return make_response('Could not verify',401,{"WWW-Authenticate":"Basic realm = 'Login required'"})
+
+   if check_password_hash(user.password,auth.password):
+       token=jwt.encode({'public_id': user.public_id,'exp':datetime.utcnow()+ datetime.timedelta(minutes=30)},app.config['SECRET_KEY'])
+
+       return jsonify({"token": token.decode('UTF-8')})
+   
+   return make_response('Could not verify',401,{"WWW-Authenticate":"Basic realm = 'Login required'"})
